@@ -34,6 +34,8 @@ if TYPE_CHECKING:
     from vllm.worker.model_runner import (ModelInputForGPUBuilder,
                                           ModelInputForGPUWithSamplingMetadata)
 
+import tk_interface
+
 logger = init_logger(__name__)
 
 
@@ -890,13 +892,17 @@ class FlashAttentionImpl(AttentionImpl):
                 )
             else:
                 # Use flash_attn_with_kvcache for normal decoding.
+                # FIXME TODO
+                # this is where we want to make a change for the simplest case
                 (
                     seq_lens_arg,
                     _,
                     block_tables_arg,
                 ) = get_seq_len_block_table_args(decode_meta, False, attn_type)
                 descale_shape = (seq_lens_arg.shape[0], key_cache.shape[-2])
-                flash_attn_with_kvcache(
+
+                # flash_attn_with_kvcache(
+                tk_interface.gqa_decode_cuda
                     q=decode_query.unsqueeze(1),
                     k_cache=key_cache,
                     v_cache=value_cache,
@@ -908,12 +914,13 @@ class FlashAttentionImpl(AttentionImpl):
                     alibi_slopes=alibi_slopes,
                     softcap=logits_soft_cap,
                     out=decode_output.unsqueeze(1),
-                    fa_version=self.vllm_flash_attn_version,
-                    q_descale=layer._q_scale.expand(descale_shape),
-                    k_descale=layer._k_scale.expand(descale_shape),
-                    v_descale=layer._v_scale.expand(descale_shape),
+                    new_tokens=1
+                    # fa_version=self.vllm_flash_attn_version,
+                    # q_descale=layer._q_scale.expand(descale_shape),
+                    # k_descale=layer._k_scale.expand(descale_shape),
+                    # v_descale=layer._v_scale.expand(descale_shape),
                 )
-        return output
+                return output
 
 
 def _get_query_key_seq_metadata(
