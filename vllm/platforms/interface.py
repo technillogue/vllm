@@ -50,6 +50,7 @@ class _Backend(enum.Enum):
     IPEX = enum.auto()
     BLOCK_SPARSE_FLASH_ATTN = enum.auto()
     NO_ATTENTION = enum.auto()
+    THUNDER_ATTN = enum.auto()
 
 
 class PlatformEnum(enum.Enum):
