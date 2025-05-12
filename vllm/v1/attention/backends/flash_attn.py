@@ -320,11 +320,11 @@ class FlashAttentionMetadataBuilder:
                     batch_size=batch_size,
                     max_seqlen_q=max_query_len,
                     max_seqlen_k=max_seq_len,
-                    cache_seqlens=seqlens,
                     num_heads_q=self.num_heads_q,
                     num_heads_kv=self.num_heads_kv,
                     headdim=self.headdim,
                     page_size=self.page_size,
+                    cache_seqlens=seqlens,
                     cu_seqlens_q=cu_query_lens,
                     causal=causal,
                 )
@@ -592,6 +592,7 @@ class FlashAttentionImpl(AttentionImpl):
                 block_table=block_table,
                 softcap=self.logits_soft_cap,
                 # scheduler_metadata=scheduler_metadata,
+                cache_seqlens=seq_lens
                 # fa_version=self.vllm_flash_attn_version,
                 # q_descale=layer._q_scale.expand(descale_shape),
                 # k_descale=layer._k_scale.expand(descale_shape),
