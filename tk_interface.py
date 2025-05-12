@@ -2,7 +2,7 @@ from typing import List, Tuple
 
 import torch
 from torch import Tensor
-from .thunderkittens import gqa_decode_4_heads as gqa_decode_4_heads_, create_schedule
+from .thunderkittens import gqa_decode_4_heads as _gqa_decode_4_heads, create_schedule as _create_schedule
 print("tk_interface imported")
 
 #import fpectl
@@ -57,7 +57,7 @@ def gqa_decode_4_heads(
     Softmax_scale: float,
     tic: int,
 ):
-    return gqa_decode_4_heads_(
+    return _gqa_decode_4_heads(
         instructions,
         Q,
         K_cache,
@@ -89,7 +89,7 @@ NPROC = 132
 
 
 class Scheduler:
-    create_schedule = staticmethod(create_schedule)
+    create_schedule = staticmethod(_create_schedule)
 
     @staticmethod
     def create_instructions(
@@ -147,6 +147,16 @@ class Scheduler:
 
         return Instructions, num_instructions
 
+def get_scheduler_metadata(
+    cache_seqlens,
+    # I think this could be used for new_tokens
+    cu_seqlens_q=None,
+    # fa3 schedule has a lot of arguments we don't care about
+    **kwargs
+):
+    tasks = _create_schedule(seq_lengths=cache_seqlens, new_tokens=1, num_processors=NPROCS)
+    instructions, _ = Scheduler.create_instructions(tasks)
+    return instructions
 
 # def get_tensors(seqlens: List[int], decode_seqlen: int, return_tasks: bool = False):
 #     Tasks = Scheduler.create_schedule(seqlens, decode_seqlen)
@@ -207,7 +217,8 @@ def gqa_decode_cuda(
     # interleaved: bool,
     # Attention logits soft-capping.
     softcap: float,
-    cache_seqlens: torch.Tensor,
+    #cache_seqlens: torch.Tensor,
+    scheduler_metadata: torch.Tensor,
     # Optional qkv scales when using fp8 attention.
     scales_q: torch.Tensor = None, scales_k: torch.Tensor = None, scales_v: torch.Tensor = None,
     rank: int = None,
@@ -218,7 +229,7 @@ def gqa_decode_cuda(
 
     # ThunderGQA specifics.
     # seqlens
-    new_tokens: int = 1
+    # new_tokens: int = 1
     # num_instructions: int,
     # instructions: torch.Tensor,
 ) -> torch.Tensor:
@@ -239,8 +250,12 @@ def gqa_decode_cuda(
     if prefix_seqlens:
         raise NotImplementedError("Prefix sharing is not supported in ThunderGQA.")
 
-    tasks = Scheduler.create_schedule(cache_seqlens.tolist(), new_tokens, NPROC)
-    instructions, num_instructions = Scheduler.create_instructions(tasks)
+    # tasks = Scheduler.create_schedule(cache_seqlens.tolist(), new_tokens, NPROC)
+    # instructions, num_instructions = Scheduler.create_instructions(tasks)
+
+    # instructions have shape (num_processors, max_instructions_per_processor, 32)
+    # dim 2 index 1 is uid 
+    num_instructions = schedule_metadata[:, :, 1].max()
 
     query = q.contiguous()
     # key = k.contiguous()
@@ -284,7 +299,7 @@ def gqa_decode_cuda(
     )
 
     gqa_decode_8_heads(
-        instructions=instructions,
+        instructions=scheduler_metadata,
         Q=query,
         K_cache=kcache,
         V_cache=vcache,
