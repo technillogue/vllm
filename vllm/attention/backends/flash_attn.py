@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Attention layer with FlashAttention."""
+print("awawa")
 from collections import defaultdict
 from dataclasses import dataclass
 from itertools import accumulate
@@ -33,8 +34,12 @@ from vllm.vllm_flash_attn import (flash_attn_varlen_func,
 if TYPE_CHECKING:
     from vllm.worker.model_runner import (ModelInputForGPUBuilder,
                                           ModelInputForGPUWithSamplingMetadata)
-
-import tk_interface
+try:
+    from . import thunderkittens
+    from . import tk_interface
+except Exception as e:
+    print(e)
+    raise SystemExit
 
 logger = init_logger(__name__)
 
@@ -902,18 +907,26 @@ class FlashAttentionImpl(AttentionImpl):
                 descale_shape = (seq_lens_arg.shape[0], key_cache.shape[-2])
 
                 # flash_attn_with_kvcache(
-                tk_interface.gqa_decode_cuda
+                output[num_prefill_query_tokens:] = tk_interface.gqa_decode_cuda(
                     q=decode_query.unsqueeze(1),
+                    k=key,
+                    v=value,
                     k_cache=key_cache,
                     v_cache=value_cache,
                     block_table=block_tables_arg,
                     cache_seqlens=seq_lens_arg,
                     softmax_scale=softmax_scale,
+
+                    cu_seqlen_query=None,
+                    prefix_seqlens=None,
+
+
+
                     causal=True,
-                    window_size=window_size,
-                    alibi_slopes=alibi_slopes,
+                    # window_size=window_size,
+                    # alibi_slopes=alibi_slopes,
                     softcap=logits_soft_cap,
-                    out=decode_output.unsqueeze(1),
+                    # out=decode_output.unsqueeze(1),
                     new_tokens=1
                     # fa_version=self.vllm_flash_attn_version,
                     # q_descale=layer._q_scale.expand(descale_shape),
