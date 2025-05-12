@@ -26,6 +26,14 @@ if current_platform.is_cuda():
     from vllm.vllm_flash_attn import (flash_attn_varlen_func,
                                       get_scheduler_metadata)
 
+try:
+    from . import thunderkittens
+    from . import tk_interface
+except Exception as e:
+    print(e)
+    raise SystemExit
+
+
 logger = init_logger(__name__)
 
 
@@ -566,12 +574,13 @@ class FlashAttentionImpl(AttentionImpl):
 
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
 
-            flash_attn_varlen_func(
+            # flash_attn_varlen_func(
+            output[:num_actual_tokens] = tk_interface.gqa_decode_cuda(
                 q=query[:num_actual_tokens],
                 k=key_cache,
                 v=value_cache,
-                out=output[:num_actual_tokens],
-                cu_seqlens_q=cu_seqlens_q,
+                # out=output[:num_actual_tokens],
+                cu_seqlens_query=cu_seqlens_q,
                 max_seqlen_q=max_seqlen_q,
                 seqused_k=seqused_k,
                 max_seqlen_k=max_seqlen_k,
@@ -581,11 +590,11 @@ class FlashAttentionImpl(AttentionImpl):
                 window_size=self.sliding_window,
                 block_table=block_table,
                 softcap=self.logits_soft_cap,
-                scheduler_metadata=scheduler_metadata,
-                fa_version=self.vllm_flash_attn_version,
-                q_descale=layer._q_scale.expand(descale_shape),
-                k_descale=layer._k_scale.expand(descale_shape),
-                v_descale=layer._v_scale.expand(descale_shape),
+                # scheduler_metadata=scheduler_metadata,
+                # fa_version=self.vllm_flash_attn_version,
+                # q_descale=layer._q_scale.expand(descale_shape),
+                # k_descale=layer._k_scale.expand(descale_shape),
+                # v_descale=layer._v_scale.expand(descale_shape),
             )
             return output
 
