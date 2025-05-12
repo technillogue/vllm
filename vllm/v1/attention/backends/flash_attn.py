@@ -27,10 +27,10 @@ if current_platform.is_cuda():
                                       get_scheduler_metadata)
 
 try:
-    from . import thunderkittens
-    from . import tk_interface
+    import thunderkittens
+    import tk_interface
 except Exception as e:
-    print(e)
+    print(repr(e))
     raise SystemExit
 
 
