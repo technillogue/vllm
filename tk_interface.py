@@ -154,7 +154,7 @@ def get_scheduler_metadata(
     # fa3 schedule has a lot of arguments we don't care about
     **kwargs
 ):
-    tasks = _create_schedule(seq_lengths=cache_seqlens, new_tokens=1, num_processors=NPROCS)
+    tasks = _create_schedule(seq_lengths=cache_seqlens, new_tokens=1, num_processors=NPROC)
     instructions, _ = Scheduler.create_instructions(tasks)
     return instructions
 
@@ -224,8 +224,13 @@ def gqa_decode_cuda(
     rank: int = None,
     layer_id: int = None,
 
+
+
+    seqused_k: torch.Tensor = None,
+
     # unused
-    sliding_window = None, 
+    sliding_window = None,
+
 
     # ThunderGQA specifics.
     # seqlens
@@ -255,7 +260,7 @@ def gqa_decode_cuda(
 
     # instructions have shape (num_processors, max_instructions_per_processor, 32)
     # dim 2 index 1 is uid 
-    num_instructions = schedule_metadata[:, :, 1].max()
+    num_instructions = scheduler_metadata[:, :, 1].max()
 
     query = q.contiguous()
     # key = k.contiguous()
@@ -286,23 +291,23 @@ def gqa_decode_cuda(
 
     attn_out = torch.zeros_like(query)
 
-    num_gpu_sm, processors = instructions.size(0), instructions.size(1)
+    num_gpu_sm, processors = scheduler_metadata.size(0), scheduler_metadata.size(1)
 
-    cos, sin = create_rope_embeddings(cache_seqlens, 1, 64)
+    cos, sin = create_rope_embeddings(seqused_k, 1, 64)
 
     timings = (
         torch.zeros(
             (num_gpu_sm, processors, 64),
             dtype=torch.int32,
-            device=instructions.device,
+            device=scheduler_metadata.device,
         )
     )
 
-    gqa_decode_8_heads(
+    gqa_decode_4_heads(
         instructions=scheduler_metadata,
         Q=query,
-        K_cache=kcache,
-        V_cache=vcache,
+        K_cache=k_cache,
+        V_cache=v_cache,
         # K_new=key,
         # V_new=value,
         K_new=None,
