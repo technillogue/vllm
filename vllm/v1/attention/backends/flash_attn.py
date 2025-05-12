@@ -315,7 +315,8 @@ class FlashAttentionMetadataBuilder:
         def schedule(batch_size, cu_query_lens, max_query_len, seqlens,
                      max_seq_len, causal):
             if self.aot_schedule:
-                return get_scheduler_metadata(
+                # return get_scheduler_metadata(
+                return tk_interface.get_scheduler_metadata(
                     batch_size=batch_size,
                     max_seqlen_q=max_query_len,
                     max_seqlen_k=max_seq_len,
