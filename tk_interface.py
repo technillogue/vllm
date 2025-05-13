@@ -2,11 +2,13 @@ from typing import List, Tuple
 
 import torch
 from torch import Tensor
-from .thunderkittens import gqa_decode_4_heads as _gqa_decode_4_heads, create_schedule as _create_schedule
+from thunderkittens import gqa_decode_4_heads as _gqa_decode_4_heads, create_schedule as _create_schedule
 print("tk_interface imported")
 
 #import fpectl
 import signal
+
+torch.set_printoptions(threshold=2)
 
 def handle_fpe(signum, frame):
     print("Floating-point exception occurred")
@@ -118,23 +120,23 @@ class Scheduler:
                     instructions[pid, tid, 0] = OP_PARTIAL
                     instructions[pid, tid, 1] = task.uid
                     instructions[pid, tid, 2] = (
-                        -task.uid - 1 if task.write_scratch else task.batch_id
+                        -task.uid - 1 if task.args.write_scratch else task.batch_id
                     )
-                    instructions[pid, tid, 3] = min(task.token_ids)
+                    instructions[pid, tid, 3] = min(task.tok_ids)
                     instructions[pid, tid, 4] = task.batch_id
-                    instructions[pid, tid, 5] = min(task.token_ids)
-                    instructions[pid, tid, 6] = task.start_seq
-                    instructions[pid, tid, 7] = task.end_seq
-                    instructions[pid, tid, 8] = task.seqlen
+                    instructions[pid, tid, 5] = min(task.tok_ids)
+                    instructions[pid, tid, 6] = task.args.start
+                    instructions[pid, tid, 7] = task.args.end
+                    instructions[pid, tid, 8] = task.args.length
 
                 elif task.task_type == OP_REDUCTION:
                     instructions[pid, tid, 0] = OP_REDUCTION
                     instructions[pid, tid, 1] = task.uid
                     instructions[pid, tid, 2] = len(task.dependencies) - 1
                     instructions[pid, tid, 3] = (
-                        -task.uid - 1 if task.write_scratch else task.batch_id
+                        -task.uid - 1 if task.args.write_scratch else task.batch_id
                     )
-                    instructions[pid, tid, 4] = task.token_ids[0]
+                    instructions[pid, tid, 4] = task.tok_ids[0]
 
                     for i, dep in enumerate(task.dependencies):
                         if i < 27:
@@ -154,7 +156,7 @@ def get_scheduler_metadata(
     # fa3 schedule has a lot of arguments we don't care about
     **kwargs
 ):
-    tasks = _create_schedule(seq_lengths=cache_seqlens, new_tokens=1, num_processors=NPROC)
+    tasks = _create_schedule(seq_lengths=cache_seqlens.tolist(), new_tokens=1, num_processors=NPROC)
     instructions, _ = Scheduler.create_instructions(tasks)
     return instructions
 
@@ -202,9 +204,9 @@ def gqa_decode_cuda(
     # The block table for paged-kv.
     block_table: torch.Tensor,
     # The cumulative query and key length specific(s) for varlen decode.
-    cu_seqlen_query: torch.Tensor,
+    #cu_seqlen_query: torch.Tensor,
     # The prefix lengths for constraining the KV subset.
-    prefix_seqlens: torch.Tensor,
+    #prefix_seqlens: torch.Tensor,
     # # The cached rotary embedding supports.
     # cos: torch.Tensor, sin: torch.Tensor,
     # The softmax scale in attention.
@@ -230,6 +232,7 @@ def gqa_decode_cuda(
 
     # unused
     sliding_window = None,
+    **kwargs,
 
 
     # ThunderGQA specifics.
@@ -240,8 +243,8 @@ def gqa_decode_cuda(
 ) -> torch.Tensor:
     print("called gqa_decode_cuda")
     
-    if cu_seqlen_query is not None:
-        raise NotImplementedError("Varlen is not supported in ThunderGQA.")
+    # if cu_seqlen_query is not None:
+    #     raise NotImplementedError("Varlen is not supported in ThunderGQA.")
     
     if not causal:
         raise NotImplementedError("Non-Causal attention is not supported in ThunderGQA.")
@@ -252,10 +255,10 @@ def gqa_decode_cuda(
     # if interleaved:
     #     raise NotImplementedError("Interleaved rotary embedding is not supported in ThunderGQA.")
     
-    if prefix_seqlens:
-        raise NotImplementedError("Prefix sharing is not supported in ThunderGQA.")
+    # if prefix_seqlens:
+    #     raise NotImplementedError("Prefix sharing is not supported in ThunderGQA.")
 
-    # tasks = Scheduler.create_schedule(cache_seqlens.tolist(), new_tokens, NPROC)
+    # # tasks = Scheduler.create_schedule(cache_seqlens.tolist(), new_tokens, NPROC)
     # instructions, num_instructions = Scheduler.create_instructions(tasks)
 
     # instructions have shape (num_processors, max_instructions_per_processor, 32)
@@ -266,7 +269,7 @@ def gqa_decode_cuda(
     # key = k.contiguous()
     # value = v.contiguous()
 
-    _, decode_length, num_heads, head_size = query.size()
+    *_, decode_length, num_heads, head_size = query.size()
     device = query.device
 
         # K_new=key,

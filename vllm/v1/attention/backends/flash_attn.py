@@ -578,10 +578,13 @@ class FlashAttentionImpl(AttentionImpl):
             # flash_attn_varlen_func(
             output[:num_actual_tokens] = tk_interface.gqa_decode_cuda(
                 q=query[:num_actual_tokens],
-                k=key_cache,
-                v=value_cache,
+                k=None,
+                v=None,
+                k_cache=key_cache,
+                v_cache=value_cache,
                 # out=output[:num_actual_tokens],
-                cu_seqlens_query=cu_seqlens_q,
+                # new_tokens is already stored in the instructions
+                #cu_seqlen_query=cu_seqlens_q,
                 max_seqlen_q=max_seqlen_q,
                 seqused_k=seqused_k,
                 max_seqlen_k=max_seqlen_k,
@@ -591,8 +594,8 @@ class FlashAttentionImpl(AttentionImpl):
                 window_size=self.sliding_window,
                 block_table=block_table,
                 softcap=self.logits_soft_cap,
-                # scheduler_metadata=scheduler_metadata,
-                cache_seqlens=seq_lens
+                scheduler_metadata=scheduler_metadata,
+                #cache_seqlens=seqlens,
                 # fa_version=self.vllm_flash_attn_version,
                 # q_descale=layer._q_scale.expand(descale_shape),
                 # k_descale=layer._k_scale.expand(descale_shape),
