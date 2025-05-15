@@ -277,6 +277,8 @@ def gqa_decode_cuda(
 
         # K_new=key,
         # V_new=value,
+    print("*_, decode_length, num_heads, head_size = query.size() =", query.size())
+    print("making output_scratch (num_instructions, decode_length, num_heads, head_size)", (num_instructions, decode_length, num_heads, head_size)) 
     output_scratch = torch.zeros(
         (num_instructions, decode_length, num_heads, head_size),
         dtype=torch.float32,
@@ -309,10 +311,10 @@ def gqa_decode_cuda(
         )
     )
     print("k/k_cache:", k_cache.shape)
-    print("block table:", block_table.shape)
-    print("scheduler metadata", scheduler_metadata.shape)
-    k_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
-    v_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
+    print("block table:", block_table.shape, block_table.dtype)
+    print("scheduler metadata (instructions): ", scheduler_metadata.shape)
+    # k_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
+    # v_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
 
     gqa_decode_4_heads(
         instructions=scheduler_metadata,
