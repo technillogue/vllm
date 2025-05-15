@@ -8,7 +8,7 @@ print("tk_interface imported")
 #import fpectl
 import signal
 
-torch.set_printoptions(threshold=2)
+torch.set_printoptions(threshold=0, edgeitems=0, precision=1)
 
 def handle_fpe(signum, frame):
     print("Floating-point exception occurred")
@@ -58,7 +58,9 @@ def gqa_decode_4_heads(
     semaphore: Tensor,
     Softmax_scale: float,
     tic: int,
+    timings: Tensor,
 ):
+
     return _gqa_decode_4_heads(
         instructions,
         Q,
@@ -75,6 +77,7 @@ def gqa_decode_4_heads(
         semaphore,
         Softmax_scale,
         tic,
+        timings,
     )
 
 
@@ -305,6 +308,11 @@ def gqa_decode_cuda(
             device=scheduler_metadata.device,
         )
     )
+    print("k/k_cache:", k_cache.shape)
+    print("block table:", block_table.shape)
+    print("scheduler metadata", scheduler_metadata.shape)
+    k_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
+    v_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
 
     gqa_decode_4_heads(
         instructions=scheduler_metadata,
@@ -324,6 +332,7 @@ def gqa_decode_cuda(
         semaphore=semaphore,
         Softmax_scale=softmax_scale,
         tic=1, # tic
+        timings=timings,
     )
 
     return attn_out

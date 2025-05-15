@@ -514,6 +514,9 @@ class FlashAttentionImpl(AttentionImpl):
             # Profiling run.
             return output
 
+        print("kv_cache:", kv_cache.shape)
+        print("key, value:", key.shape, value.shape)
+
         # IMPORTANT!
         # NOTE(woosuk): With piece-wise CUDA graphs, this method is executed in
         # eager-mode PyTorch. Thus, we need to be careful about any CPU overhead
@@ -530,6 +533,9 @@ class FlashAttentionImpl(AttentionImpl):
         # value[:num_actual_tokens] because the reshape_and_cache_flash op uses
         # the slot_mapping's shape to determine the number of actual tokens.
         key_cache, value_cache = kv_cache.unbind(0)
+        print("key_cache shape before reshape", key_cache.shape)
+        print("slot mapping", attn_metadata.slot_mapping.shape)
+
         torch.ops._C_cache_ops.reshape_and_cache_flash(
             key,
             value,
@@ -540,6 +546,7 @@ class FlashAttentionImpl(AttentionImpl):
             layer._k_scale,
             layer._v_scale,
         )
+        print("key_cache shape after reshape", key_cache.shape)
 
         if self.kv_cache_dtype.startswith("fp8"):
             key_cache = key_cache.view(torch.float8_e4m3fn)
