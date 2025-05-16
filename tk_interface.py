@@ -3,19 +3,9 @@ from typing import List, Tuple
 import torch
 from torch import Tensor
 from thunderkittens import gqa_decode_4_heads as _gqa_decode_4_heads, create_schedule as _create_schedule
-print("tk_interface imported")
 
-#import fpectl
-import signal
 
 torch.set_printoptions(threshold=0, edgeitems=0, precision=1)
-
-def handle_fpe(signum, frame):
-    print("Floating-point exception occurred")
-    raise FloatingPointError("FPE detected")
-
-signal.signal(signal.SIGFPE, handle_fpe)
-#fpectl.turnon_sigfpe()
 
 def create_rope_embeddings(seq_lengths, new_tokens, rope_dim, base: float = 10000.0):
     # add NUM_ROWS_d2 to account for loading in 16 rows to not overflow
@@ -84,11 +74,6 @@ def gqa_decode_4_heads(
 HIDDEN_DIM = 128
 Q_HEADS = 8
 
-# PAGE_SIZE = 256
-# PAGE_BUFFER_SIZE = 10
-# NUM_PAGES = 10000
-
-# KV_CACHE_ROW_SIZE = 32
 
 NPROC = 132
 
@@ -163,39 +148,27 @@ def get_scheduler_metadata(
     instructions, _ = Scheduler.create_instructions(tasks)
     return instructions
 
-# def get_tensors(seqlens: List[int], decode_seqlen: int, return_tasks: bool = False):
-#     Tasks = Scheduler.create_schedule(seqlens, decode_seqlen)
 
-#     Instructions, num_instructions = Scheduler.create_instructions(Tasks)
 
-#     max_num_processor_instructions = Instructions.shape[1]
+                q=query[:num_actual_tokens],
+                k=None,
+                v=None,
+                k_cache=key_cache,
+                v_cache=value_cache,
+                # out=output[:num_actual_tokens],
+                # new_tokens is already stored in the instructions
+                #cu_seqlen_query=cu_seqlens_q,
+                max_seqlen_q=max_seqlen_q,
+                seqused_k=seqused_k,
+                max_seqlen_k=max_seqlen_k,
+                softmax_scale=self.scale,
+                causal=True,
+                alibi_slopes=self.alibi_slopes,
+                window_size=self.sliding_window,
+                block_table=block_table,
+                softcap=self.logits_soft_cap,
+                scheduler_metadata=scheduler_metadata,
 
-#     O_scratch = torch.zeros(
-#         (num_instructions, decode_seqlen, Q_HEADS, HIDDEN_DIM),
-#         dtype=torch.float32,
-#         device="cuda",
-#     )
-
-#     Lvec_scratch = torch.zeros(
-#         (num_instructions, decode_seqlen, Q_HEADS),
-#         dtype=torch.float32,
-#         device="cuda",
-#     )
-
-#     Semaphore = torch.zeros(
-#         (num_instructions, decode_seqlen), dtype=torch.int32, device="cuda"
-#     )
-
-#     Timings = torch.zeros(
-#         (NPROC, max_num_processor_instructions, 64),
-#         dtype=torch.int32,
-#         device="cuda",
-#     )
-
-#     if return_tasks:
-#         return Instructions, O_scratch, Lvec_scratch, Semaphore, Timings, Tasks
-#     else:
-#         return Instructions, O_scratch, Lvec_scratch, Semaphore, Timings, None
 
 def gqa_decode_cuda(
     # The QKV components.
@@ -206,79 +179,61 @@ def gqa_decode_cuda(
     k_cache: torch.Tensor, v_cache: torch.Tensor,
     # The block table for paged-kv.
     block_table: torch.Tensor,
-    # The cumulative query and key length specific(s) for varlen decode.
-    #cu_seqlen_query: torch.Tensor,
-    # The prefix lengths for constraining the KV subset.
-    #prefix_seqlens: torch.Tensor,
-    # # The cached rotary embedding supports.
-    # cos: torch.Tensor, sin: torch.Tensor,
     # The softmax scale in attention.
     softmax_scale: float,
+    # Attention logits soft-capping.
+    softcap: float,
+    # cache_seqlens: torch.Tensor,
+    seqused_k: torch.Tensor,
+    # instructions tensor
+    scheduler_metadata: torch.Tensor,
+
+    # passed by vllm but not used:
+    # max_seqlen_q, max_seqlen_k
+    # window_size, alibi_slopes, fa_version
+    # {q,k,v}_descale
+
+    # # The cached rotary embedding supports.
+    # # not provided by vllm?
+    # cos: torch.Tensor, sin: torch.Tensor,
+
+    # other engine features not supported
+    # The cumulative query and key length specific(s) for varlen decode.
+    # cu_seqlen_query: torch.Tensor,
+    # The prefix lengths for constraining the KV subset.
+    # prefix_seqlens: torch.Tensor,
     # Non-sliding window attention.
     # left_window: int, right_window: int,
     # Causal self-attention.
     causal: bool,
-    # Non-interleaved rotary embedding.
-    # interleaved: bool,
-    # Attention logits soft-capping.
-    softcap: float,
-    #cache_seqlens: torch.Tensor,
-    scheduler_metadata: torch.Tensor,
-    # Optional qkv scales when using fp8 attention.
-    scales_q: torch.Tensor = None, scales_k: torch.Tensor = None, scales_v: torch.Tensor = None,
-    rank: int = None,
-    layer_id: int = None,
-
-
-
-    seqused_k: torch.Tensor = None,
+    # # Optional qkv scales when using fp8 attention.
+    # scales_q: torch.Tensor = None, scales_k: torch.Tensor = None, scales_v: torch.Tensor = None,
 
     # unused
-    sliding_window = None,
     **kwargs,
-
-
-    # ThunderGQA specifics.
-    # seqlens
-    # new_tokens: int = 1
-    # num_instructions: int,
-    # instructions: torch.Tensor,
 ) -> torch.Tensor:
-    print("called gqa_decode_cuda")
-    
     # if cu_seqlen_query is not None:
     #     raise NotImplementedError("Varlen is not supported in ThunderGQA.")
-    
     if not causal:
         raise NotImplementedError("Non-Causal attention is not supported in ThunderGQA.")
-    
     if scales_q is not None or scales_k is not None or scales_v is not None:
         raise NotImplementedError("FP8 attention is not supported in ThunderGQA.")
-    
     # if interleaved:
     #     raise NotImplementedError("Interleaved rotary embedding is not supported in ThunderGQA.")
-    
     # if prefix_seqlens:
     #     raise NotImplementedError("Prefix sharing is not supported in ThunderGQA.")
-
-    # # tasks = Scheduler.create_schedule(cache_seqlens.tolist(), new_tokens, NPROC)
-    # instructions, num_instructions = Scheduler.create_instructions(tasks)
 
     # instructions have shape (num_processors, max_instructions_per_processor, 32)
     # dim 2 index 1 is uid 
     num_instructions = scheduler_metadata[:, :, 1].max()
 
     query = q.contiguous()
-    # key = k.contiguous()
-    # value = v.contiguous()
 
     *_, decode_length, num_heads, head_size = query.size()
     device = query.device
 
-        # K_new=key,
-        # V_new=value,
-    print("*_, decode_length, num_heads, head_size = query.size() =", query.size())
-    print("making output_scratch (num_instructions, decode_length, num_heads, head_size)", (num_instructions, decode_length, num_heads, head_size)) 
+    # print("*_, decode_length, num_heads, head_size = query.size() =", query.size())
+    # print("making output_scratch (num_instructions, decode_length, num_heads, head_size)", (num_instructions, decode_length, num_heads, head_size)) 
     output_scratch = torch.zeros(
         (num_instructions, decode_length, num_heads, head_size),
         dtype=torch.float32,
@@ -310,25 +265,20 @@ def gqa_decode_cuda(
             device=scheduler_metadata.device,
         )
     )
-    print("k/k_cache:", k_cache.shape)
-    print("block table:", block_table.shape, block_table.dtype)
-    print("scheduler metadata (instructions): ", scheduler_metadata.shape)
+    # print("k/k_cache:", k_cache.shape, "block table:", block_table.shape, "instructions:", scheduler_metadata.shape)
+
     # have: [num_blocks, page_size, kv_heads, head_dim]
     # want [kv_heads=1, num_blocks, page_size, head_dim] 
     k_cache = k_cache.permute((2, 0, 1, 3)).contiguous()
     v_cache = v_cache.permute((2, 0, 1, 3)).contiguous()
-    print("new k_cache shape", k_cache.shape)
     
-    # k_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
-    # v_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
-
     gqa_decode_4_heads(
         instructions=scheduler_metadata,
         Q=query,
         K_cache=k_cache,
         V_cache=v_cache,
-        # K_new=key,
-        # V_new=value,
+        # K_new=k,
+        # V_new=v,
         K_new=None,
         V_new=None,
         cos=cos,
