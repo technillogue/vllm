@@ -313,6 +313,12 @@ def gqa_decode_cuda(
     print("k/k_cache:", k_cache.shape)
     print("block table:", block_table.shape, block_table.dtype)
     print("scheduler metadata (instructions): ", scheduler_metadata.shape)
+    # have: [num_blocks, page_size, kv_heads, head_dim]
+    # want [kv_heads=1, num_blocks, page_size, head_dim] 
+    k_cache = k_cache.permute((2, 0, 1, 3)).contiguous()
+    v_cache = v_cache.permute((2, 0, 1, 3)).contiguous()
+    print("new k_cache shape", k_cache.shape)
+    
     # k_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
     # v_cache = torch.zeros(1, 16, 256, 64, device=k_cache.device, dtype=k_cache.dtype)
 
