@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 """Attention layer with FlashAttention."""
+import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -33,6 +34,7 @@ except Exception as e:
     print(repr(e))
     raise SystemExit
 
+THUNDER = not os.getenv("NO_THUNDER")
 
 logger = init_logger(__name__)
 
@@ -315,8 +317,9 @@ class FlashAttentionMetadataBuilder:
         def schedule(batch_size, cu_query_lens, max_query_len, seqlens,
                      max_seq_len, causal):
             if self.aot_schedule:
+                fn = tk_interface.get_scheduler_metadata if THUNDER else get_scheduler_metadata
                 # return get_scheduler_metadata(
-                return tk_interface.get_scheduler_metadata(
+                return fn(
                     batch_size=batch_size,
                     max_seqlen_q=max_query_len,
                     max_seqlen_k=max_seq_len,
@@ -582,6 +585,31 @@ class FlashAttentionImpl(AttentionImpl):
 
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
 
+
+            if not THUNDER:
+                flash_attn_varlen_func(
+                    q=query[:num_actual_tokens],
+                    k=key_cache,
+                    v=value_cache,
+                    out=output[:num_actual_tokens],
+                    cu_seqlens_q=cu_seqlens_q,
+                    max_seqlen_q=max_seqlen_q,
+                    seqused_k=seqused_k,
+                    max_seqlen_k=max_seqlen_k,
+                    softmax_scale=self.scale,
+                    causal=True,
+                    alibi_slopes=self.alibi_slopes,
+                    window_size=self.sliding_window,
+                    block_table=block_table,
+                    softcap=self.logits_soft_cap,
+                    scheduler_metadata=scheduler_metadata,
+                    fa_version=self.vllm_flash_attn_version,
+                    q_descale=layer._q_scale.expand(descale_shape),
+                    k_descale=layer._k_scale.expand(descale_shape),
+                    v_descale=layer._v_scale.expand(descale_shape),
+                )
+                return output
+
             # flash_attn_varlen_func(
             output[:num_actual_tokens] = tk_interface.gqa_decode_cuda(
                 q=query[:num_actual_tokens],
@@ -602,11 +630,10 @@ class FlashAttentionImpl(AttentionImpl):
                 block_table=block_table,
                 softcap=self.logits_soft_cap,
                 scheduler_metadata=scheduler_metadata,
-                #cache_seqlens=seqlens,
-                # fa_version=self.vllm_flash_attn_version,
-                # q_descale=layer._q_scale.expand(descale_shape),
-                # k_descale=layer._k_scale.expand(descale_shape),
-                # v_descale=layer._v_scale.expand(descale_shape),
+                fa_version=self.vllm_flash_attn_version,
+                q_descale=layer._q_scale.expand(descale_shape),
+                k_descale=layer._k_scale.expand(descale_shape),
+                v_descale=layer._v_scale.expand(descale_shape),
             )
             return output
 
