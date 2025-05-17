@@ -1,11 +1,11 @@
 from typing import List, Tuple
-
+import os
 import torch
 from torch import Tensor
 from thunderkittens import gqa_decode_4_heads as _gqa_decode_4_heads, create_schedule as _create_schedule
 
 
-torch.set_printoptions(threshold=0, edgeitems=0, precision=1)
+#torch.set_printoptions(threshold=0, edgeitems=0, precision=1)
 
 def create_rope_embeddings(seq_lengths, new_tokens, rope_dim, base: float = 10000.0):
     # add NUM_ROWS_d2 to account for loading in 16 rows to not overflow
@@ -144,30 +144,12 @@ def get_scheduler_metadata(
     # fa3 schedule has a lot of arguments we don't care about
     **kwargs
 ):
+    # print("scheduler metadata", cache_seqlens, cu_seqlens_q)
     tasks = _create_schedule(seq_lengths=cache_seqlens.tolist(), new_tokens=1, num_processors=NPROC)
     instructions, _ = Scheduler.create_instructions(tasks)
+    #print("rank", os.environ.get("LOCAL_RANK"))
+    #print("instructions", instructions)
     return instructions
-
-
-
-                q=query[:num_actual_tokens],
-                k=None,
-                v=None,
-                k_cache=key_cache,
-                v_cache=value_cache,
-                # out=output[:num_actual_tokens],
-                # new_tokens is already stored in the instructions
-                #cu_seqlen_query=cu_seqlens_q,
-                max_seqlen_q=max_seqlen_q,
-                seqused_k=seqused_k,
-                max_seqlen_k=max_seqlen_k,
-                softmax_scale=self.scale,
-                causal=True,
-                alibi_slopes=self.alibi_slopes,
-                window_size=self.sliding_window,
-                block_table=block_table,
-                softcap=self.logits_soft_cap,
-                scheduler_metadata=scheduler_metadata,
 
 
 def gqa_decode_cuda(
@@ -216,8 +198,8 @@ def gqa_decode_cuda(
     #     raise NotImplementedError("Varlen is not supported in ThunderGQA.")
     if not causal:
         raise NotImplementedError("Non-Causal attention is not supported in ThunderGQA.")
-    if scales_q is not None or scales_k is not None or scales_v is not None:
-        raise NotImplementedError("FP8 attention is not supported in ThunderGQA.")
+    # if scales_q is not None or scales_k is not None or scales_v is not None:
+    #     raise NotImplementedError("FP8 attention is not supported in ThunderGQA.")
     # if interleaved:
     #     raise NotImplementedError("Interleaved rotary embedding is not supported in ThunderGQA.")
     # if prefix_seqlens:
