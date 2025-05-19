@@ -3,7 +3,7 @@ import os
 import torch
 from torch import Tensor
 from thunderkittens import gqa_decode_4_heads as _gqa_decode_4_heads, create_schedule as _create_schedule
-
+from torch import distributed as dist
 
 #torch.set_printoptions(threshold=0, edgeitems=0, precision=1)
 
@@ -137,6 +137,15 @@ class Scheduler:
 
         return Instructions, num_instructions
 
+def task_repr(t):
+    return (
+        f"<Task uid={t.uid} batch_id={t.batch_id} tok_ids={t.tok_ids} name={t.name} "
+        f"task_type={t.task_type} dependencies={t.dependencies} next_input_time={t.next_input_time} "
+        f"start={t.start} finish={t.finish} processor={t.processor} "
+        f"args=<Args start={t.args.start} end={t.args.end} length={t.args.length}>>"
+    )
+
+
 def get_scheduler_metadata(
     cache_seqlens,
     # I think this could be used for new_tokens
@@ -147,6 +156,9 @@ def get_scheduler_metadata(
     # print("scheduler metadata", cache_seqlens, cu_seqlens_q)
     tasks = _create_schedule(seq_lengths=cache_seqlens.tolist(), new_tokens=1, num_processors=NPROC)
     instructions, _ = Scheduler.create_instructions(tasks)
+    if dist.get_rank() == 0:
+        print("tasks:", [task_repr(t) for t in tasks])
+        print("instructions", instructions)
     #print("rank", os.environ.get("LOCAL_RANK"))
     #print("instructions", instructions)
     return instructions

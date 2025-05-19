@@ -27,6 +27,8 @@ if current_platform.is_cuda():
     from vllm.vllm_flash_attn import (flash_attn_varlen_func,
                                       get_scheduler_metadata)
 
+
+from torch import distributed as dist
 try:
     import thunderkittens
     import tk_interface
@@ -102,6 +104,7 @@ class FlashAttentionMetadata:
 
     # Optional aot scheduling
     scheduler_metadata: Optional[torch.Tensor] = None
+    tk_sched: Optional[torch.Tensor] = None
     prefix_scheduler_metadata: Optional[torch.Tensor] = None
 
     # for local attention
@@ -308,6 +311,7 @@ class FlashAttentionMetadataBuilder:
         query_start_loc = query_start_loc_cpu.to(self.runner.device,
                                                  non_blocking=True)
         seq_lens_cpu = self.runner.seq_lens_cpu[:num_reqs]
+        print("seqlens during schedule", seq_lens_cpu)
         seq_lens = seq_lens_cpu.to(self.runner.device, non_blocking=True)
         block_table = (
             self.runner.input_batch.block_table.get_device_tensor()[:num_reqs])
@@ -318,6 +322,7 @@ class FlashAttentionMetadataBuilder:
                      max_seq_len, causal):
             if self.aot_schedule:
                 fn = tk_interface.get_scheduler_metadata if THUNDER else get_scheduler_metadata
+                fn = lambda **k: (tk_interface.get_scheduler_metadata(**k), get_scheduler_metadata(**k))
                 # return get_scheduler_metadata(
                 return fn(
                     batch_size=batch_size,
@@ -331,7 +336,7 @@ class FlashAttentionMetadataBuilder:
                     cu_seqlens_q=cu_query_lens,
                     causal=causal,
                 )
-            return None
+            return None, None
 
         # for local attention
         local_attn_metadata = None
@@ -356,7 +361,7 @@ class FlashAttentionMetadataBuilder:
                 max_query_len=local_max_query_len,
                 seqlens=local_seqused_k,
                 max_seq_len=local_max_seq_len,
-                causal=True)
+                causal=True)[1]
 
             local_attn_metadata = FlashAttentionMetadata.LocalAttentionMetadata(
                 local_query_start_loc=local_query_start_loc,
@@ -386,8 +391,8 @@ class FlashAttentionMetadataBuilder:
                 max_query_len=num_actual_tokens,
                 seqlens=prefix_kv_lens,
                 max_seq_len=common_prefix_len,
-                causal=False)
-            scheduler_metadata = schedule(batch_size=num_reqs,
+                causal=False)[1]
+            tk_sched, scheduler_metadata = schedule(batch_size=num_reqs,
                                           cu_query_lens=query_start_loc,
                                           max_query_len=max_query_len,
                                           seqlens=suffix_kv_lens,
@@ -399,7 +404,7 @@ class FlashAttentionMetadataBuilder:
             prefix_kv_lens = None
             suffix_kv_lens = None
             prefix_scheduler_metadata = None
-            scheduler_metadata = schedule(batch_size=num_reqs,
+            tk_sched, scheduler_metadata = schedule(batch_size=num_reqs,
                                           cu_query_lens=query_start_loc,
                                           max_query_len=max_query_len,
                                           seqlens=seq_lens,
@@ -417,6 +422,7 @@ class FlashAttentionMetadataBuilder:
             use_cascade=use_cascade,
             common_prefix_len=common_prefix_len,
             scheduler_metadata=scheduler_metadata,
+            tk_sched=tk_sched,
             cu_prefix_query_lens=cu_prefix_query_lens,
             prefix_kv_lens=prefix_kv_lens,
             suffix_kv_lens=suffix_kv_lens,
@@ -445,6 +451,7 @@ class FlashAttentionImpl(AttentionImpl):
         attn_type: AttentionType = AttentionType.DECODER,
         use_irope: bool = False,
     ) -> None:
+        self.rank = dist.get_rank()
         if blocksparse_params is not None:
             raise ValueError(
                 "FlashAttention does not support block-sparse attention.")
@@ -586,29 +593,28 @@ class FlashAttentionImpl(AttentionImpl):
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
 
 
-            if not THUNDER:
-                flash_attn_varlen_func(
-                    q=query[:num_actual_tokens],
-                    k=key_cache,
-                    v=value_cache,
-                    out=output[:num_actual_tokens],
-                    cu_seqlens_q=cu_seqlens_q,
-                    max_seqlen_q=max_seqlen_q,
-                    seqused_k=seqused_k,
-                    max_seqlen_k=max_seqlen_k,
-                    softmax_scale=self.scale,
-                    causal=True,
-                    alibi_slopes=self.alibi_slopes,
-                    window_size=self.sliding_window,
-                    block_table=block_table,
-                    softcap=self.logits_soft_cap,
-                    scheduler_metadata=scheduler_metadata,
-                    fa_version=self.vllm_flash_attn_version,
-                    q_descale=layer._q_scale.expand(descale_shape),
-                    k_descale=layer._k_scale.expand(descale_shape),
-                    v_descale=layer._v_scale.expand(descale_shape),
-                )
-                return output
+            fa_output = torch.zeros_like(output)
+            flash_attn_varlen_func(
+                q=query[:num_actual_tokens],
+                k=key_cache,
+                v=value_cache,
+                out=fa_output[:num_actual_tokens], #output[:num_actual_tokens],
+                cu_seqlens_q=cu_seqlens_q,
+                max_seqlen_q=max_seqlen_q,
+                seqused_k=seqused_k,
+                max_seqlen_k=max_seqlen_k,
+                softmax_scale=self.scale,
+                causal=True,
+                alibi_slopes=self.alibi_slopes,
+                window_size=self.sliding_window,
+                block_table=block_table,
+                softcap=self.logits_soft_cap,
+                scheduler_metadata=scheduler_metadata,
+                fa_version=self.vllm_flash_attn_version,
+                q_descale=layer._q_scale.expand(descale_shape),
+                k_descale=layer._k_scale.expand(descale_shape),
+                v_descale=layer._v_scale.expand(descale_shape),
+            )
 
             # flash_attn_varlen_func(
             output[:num_actual_tokens] = tk_interface.gqa_decode_cuda(
@@ -629,12 +635,18 @@ class FlashAttentionImpl(AttentionImpl):
                 window_size=self.sliding_window,
                 block_table=block_table,
                 softcap=self.logits_soft_cap,
-                scheduler_metadata=scheduler_metadata,
+                scheduler_metadata=attn_metadata.tk_sched, #scheduler_metadata,
                 fa_version=self.vllm_flash_attn_version,
                 q_descale=layer._q_scale.expand(descale_shape),
                 k_descale=layer._k_scale.expand(descale_shape),
                 v_descale=layer._v_scale.expand(descale_shape),
             )
+            if self.rank == 0:
+                print("tk shape:", output[:num_actual_tokens].shape,
+                "\ntk output", output[:num_actual_tokens], "\nfa output", fa_output[:num_actual_tokens], "\ndiff", output - fa_output)
+                assert output[:num_actual_tokens].allclose(fa_output[:num_actual_tokens], atol=1e-2)
+            if not THUNDER:
+                output[:num_actual_tokens] = fa_output[:num_actual_tokens]
             return output
 
         assert not use_local_attn, (
