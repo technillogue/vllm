@@ -12,7 +12,9 @@ prompts_3 = [
     "The capital of France is",
     "The future of AI is",
 ]
-tasks = [prompts_1, prompts_2, prompts_3, ["Hello,"], ["Hello, my name"], ["Hello, my"]]
+#tasks = [prompts_1, prompts_2, prompts_3, ["Hello,"]]#, ["Hello, my"], ["Hello, my name"]]
+#tasks = [prompts_1, prompts_3, prompts_1] #, prompts_2, prompts_3, ["Hello,"], ["Hello, my"], ["Hello, my name"]]
+tasks = [["Hello"]] # , ["Hello,"], ["Hello, my"], ["Hello, my name"]]
 # Create a sampling params object.
 sampling_params = SamplingParams(temperature=0, top_p=0.95, max_tokens=32)
 
