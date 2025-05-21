@@ -31,12 +31,13 @@ if current_platform.is_cuda():
 from torch import distributed as dist
 try:
     import thunderkittens
-    import tk_interface
+    import vllm_tk_interface as tk_interface
 except Exception as e:
     print(repr(e))
     raise SystemExit
 
 THUNDER = not os.getenv("NO_THUNDER")
+ASSERT = os.getenv("ASSERT")
 
 logger = init_logger(__name__)
 
@@ -76,6 +77,8 @@ class FlashAttentionBackend(AttentionBackend):
             raise ValueError("Block size must be a multiple of 16.")
         return (2, num_blocks, block_size, num_kv_heads, head_size)
 
+
+prefill_warned = False
 
 @dataclass
 class FlashAttentionMetadata:
@@ -452,6 +455,7 @@ class FlashAttentionImpl(AttentionImpl):
         use_irope: bool = False,
     ) -> None:
         self.rank = dist.get_rank()
+        os.environ["VLLM_RANK"] = str(self.rank)
         if blocksparse_params is not None:
             raise ValueError(
                 "FlashAttention does not support block-sparse attention.")
@@ -615,6 +619,14 @@ class FlashAttentionImpl(AttentionImpl):
                 k_descale=layer._k_scale.expand(descale_shape),
                 v_descale=layer._v_scale.expand(descale_shape),
             )
+            if max_seqlen_q > 1:
+                global prefill_warned
+                if not prefill_warned and self.rank == 0:
+                    print("max_seqlen != 1, using fa not tk for prefill")
+                    prefill_warned = True
+                # prefill
+                output[:num_actual_tokens] = fa_output[:num_actual_tokens]
+                return fa_output
 
             # flash_attn_varlen_func(
             output[:num_actual_tokens] = tk_interface.gqa_decode_cuda(
@@ -625,7 +637,7 @@ class FlashAttentionImpl(AttentionImpl):
                 v_cache=value_cache,
                 # out=output[:num_actual_tokens],
                 # new_tokens is already stored in the instructions
-                #cu_seqlen_query=cu_seqlens_q,
+                cu_seqlen_query=cu_seqlens_q,
                 max_seqlen_q=max_seqlen_q,
                 seqused_k=seqused_k,
                 max_seqlen_k=max_seqlen_k,
@@ -641,9 +653,11 @@ class FlashAttentionImpl(AttentionImpl):
                 k_descale=layer._k_scale.expand(descale_shape),
                 v_descale=layer._v_scale.expand(descale_shape),
             )
-            if self.rank == 0:
-                print("tk shape:", output[:num_actual_tokens].shape,
-                "\ntk output", output[:num_actual_tokens], "\nfa output", fa_output[:num_actual_tokens], "\ndiff", output - fa_output)
+            if ASSERT and self.rank == 0:
+                print(
+                    "tk shape:", output[:num_actual_tokens].shape, "\navg abs diff", abs(output - fa_output).mean(),
+                    "\ntk output", output[:num_actual_tokens], "\nfa output", fa_output[:num_actual_tokens], "\ndiff", output - fa_output
+                )
                 assert output[:num_actual_tokens].allclose(fa_output[:num_actual_tokens], atol=1e-2)
             if not THUNDER:
                 output[:num_actual_tokens] = fa_output[:num_actual_tokens]
