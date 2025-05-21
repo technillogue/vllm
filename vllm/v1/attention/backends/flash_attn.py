@@ -595,6 +595,20 @@ class FlashAttentionImpl(AttentionImpl):
                 scheduler_metadata = attn_metadata.scheduler_metadata
 
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
+            if self.rank == 0:
+                print("block_table:", block_table)
+
+            query = torch.ones_like(query)
+
+            # key_cache = torch.ones_like(key_cache)
+            key_cache.fill_(0.0)
+            value_cache.fill_(0.0)
+            for token_idx in range(4):
+                # set the key cache to small values
+                # since query is ones QKt = K, so softmax(QKt) depends on the exact values of K
+                key_cache[0, token_idx, 0, :] = token_idx
+                value_cache[0, token_idx, 0, :] = -1.0
+            value_cache[0, 5, 0, :] = key_cache[0, 5, 0, :] = 50
 
 
             fa_output = torch.zeros_like(output)
