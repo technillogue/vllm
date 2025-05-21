@@ -218,8 +218,8 @@ def gqa_decode_cuda(
     #     raise NotImplementedError("Prefix sharing is not supported in ThunderGQA.")
 
     # instructions have shape (num_processors, max_instructions_per_processor, 32)
-    # dim 2 index 1 is uid 
-    num_instructions = scheduler_metadata[:, :, 1].max()
+    # dim 2 index 1 is uid
+    num_instructions = 300 # scheduler_metadata[:, :, 1].max() + 1
 
     query = q.contiguous()
 
