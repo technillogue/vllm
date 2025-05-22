@@ -314,7 +314,8 @@ class FlashAttentionMetadataBuilder:
         query_start_loc = query_start_loc_cpu.to(self.runner.device,
                                                  non_blocking=True)
         seq_lens_cpu = self.runner.seq_lens_cpu[:num_reqs]
-        print("seqlens during schedule", seq_lens_cpu)
+        if dist.get_rank() == 0:
+            print("seqlens during schedule", seq_lens_cpu)
         seq_lens = seq_lens_cpu.to(self.runner.device, non_blocking=True)
         block_table = (
             self.runner.input_batch.block_table.get_device_tensor()[:num_reqs])
@@ -603,12 +604,21 @@ class FlashAttentionImpl(AttentionImpl):
             # key_cache = torch.ones_like(key_cache)
             key_cache.fill_(0.0)
             value_cache.fill_(0.0)
+            page_idx = 1
+            # [num_pages, page_size, kv_heads=1, head_dim]
             for token_idx in range(4):
                 # set the key cache to small values
                 # since query is ones QKt = K, so softmax(QKt) depends on the exact values of K
-                key_cache[0, token_idx, 0, :] = token_idx
-                value_cache[0, token_idx, 0, :] = -1.0
-            value_cache[0, 5, 0, :] = key_cache[0, 5, 0, :] = 50
+                key_cache[:, token_idx, 0, :] = token_idx
+                value_cache[:, token_idx, 0, :] = -1.0
+            value_cache[:, 4, 0, :] = 50.0
+            key_cache[:, 4, 0, :] = 50.0
+            # query, key_cache, value_cache = (torch.randn_like(n) for n in (query, key_cache, value_cache))
+            print(
+                "query", query, 
+                "\nv_cache[1, :6, :, 0]", value_cache[page_idx, :6, :, 0],
+                "\nk_cache[1, :6, :, 0]", key_cache[page_idx, :6, :, 0]
+            )
 
 
             fa_output = torch.zeros_like(output)
@@ -670,8 +680,10 @@ class FlashAttentionImpl(AttentionImpl):
             if ASSERT and self.rank == 0:
                 print(
                     "tk shape:", output[:num_actual_tokens].shape, "\navg abs diff", abs(output - fa_output).mean(),
-                    "\ntk output", output[:num_actual_tokens], "\nfa output", fa_output[:num_actual_tokens], "\ndiff", output - fa_output
+                    "\ntk output", output[:num_actual_tokens], "\nfa output", fa_output[:num_actual_tokens]
+                    #, "\ndiff", output - fa_output
                 )
+                assert False
                 assert output[:num_actual_tokens].allclose(fa_output[:num_actual_tokens], atol=1e-2)
             if not THUNDER:
                 output[:num_actual_tokens] = fa_output[:num_actual_tokens]
