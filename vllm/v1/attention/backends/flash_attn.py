@@ -598,27 +598,28 @@ class FlashAttentionImpl(AttentionImpl):
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
             if self.rank == 0:
                 print("block_table:", block_table)
+            TESTING = True
+            if TESTING:
+                query = torch.ones_like(query)
+                # key_cache = torch.ones_like(key_cache)
+                key_cache.fill_(0.0)
+                value_cache.fill_(0.0)
+                page_idx = 1
+                # [num_pages, page_size, kv_heads=1, head_dim]
+                for token_idx in range(4):
+                    # set the key cache to small values
+                    # since query is ones QKt = K, so softmax(QKt) depends on the exact values of K
+                    key_cache[:, token_idx, 0, :] = token_idx
+                    value_cache[:, token_idx, 0, :] = -1.0
+                value_cache[:, 4, 0, :] = 50.0
+                key_cache[:, 4, 0, :] = 50.0
+                # query, key_cache, value_cache = (torch.randn_like(n) for n in (query, key_cache, value_cache))
 
-            query = torch.ones_like(query)
-
-            # key_cache = torch.ones_like(key_cache)
-            key_cache.fill_(0.0)
-            value_cache.fill_(0.0)
-            page_idx = 1
-            # [num_pages, page_size, kv_heads=1, head_dim]
-            for token_idx in range(4):
-                # set the key cache to small values
-                # since query is ones QKt = K, so softmax(QKt) depends on the exact values of K
-                key_cache[:, token_idx, 0, :] = token_idx
-                value_cache[:, token_idx, 0, :] = -1.0
-            value_cache[:, 4, 0, :] = 50.0
-            key_cache[:, 4, 0, :] = 50.0
-            # query, key_cache, value_cache = (torch.randn_like(n) for n in (query, key_cache, value_cache))
-            print(
-                "query", query, 
-                "\nv_cache[1, :6, :, 0]", value_cache[page_idx, :6, :, 0],
-                "\nk_cache[1, :6, :, 0]", key_cache[page_idx, :6, :, 0]
-            )
+                self.rank == 0 and  max_seqlen_q <= 1 and  print(
+                    "query[:, 0, 0]= ", query[:num_actual_tokens, 0, 0], 
+                    "\nv_cache[1, :6, :, 0]= ", value_cache[page_idx, :6, :, 0],
+                    "\nk_cache[1, :6, :, 0]= ", key_cache[page_idx, :6, :, 0]
+                )
 
 
             fa_output = torch.zeros_like(output)
@@ -683,7 +684,8 @@ class FlashAttentionImpl(AttentionImpl):
                     "\ntk output", output[:num_actual_tokens], "\nfa output", fa_output[:num_actual_tokens]
                     #, "\ndiff", output - fa_output
                 )
-                assert False
+                if TESTING:
+                    assert False
                 assert output[:num_actual_tokens].allclose(fa_output[:num_actual_tokens], atol=1e-2)
             if not THUNDER:
                 output[:num_actual_tokens] = fa_output[:num_actual_tokens]

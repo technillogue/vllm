@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
-from vllm import LLM, SamplingParams
+import os
 import torch
+from vllm import LLM, SamplingParams
 #torch.set_printoptions(edgeitems=4)
 torch.set_printoptions(threshold=200)
 
@@ -20,8 +21,13 @@ prompts_3 = [
 #tasks = [[""]] # , ["Hello,"], ["Hello, my"], ["Hello, my name"]]
 #tasks = [prompts_2 + prompts_3]
 tasks = [["Hello, my"]]
+tasks = prompts_3
 # Create a sampling params object.
 sampling_params = SamplingParams(temperature=0, top_p=0.95, max_tokens=32)
+
+def m():
+    llm = LLM(model="meta-llama/Llama-3.2-1B", enforce_eager=True, tensor_parallel_size=8, block_size=256)
+    return llm
 
 
 def main():
@@ -32,8 +38,9 @@ def main():
     # Generate texts from the prompts.
     # The output is a list of RequestOutput objects
     # that contain the prompt, generated text, and other information.
+    print("==ready==\n"*5)
     for x, prompts in enumerate(tasks):
-        print("generating prompts", prompts)
+        print("generating prompts", prompts, "tokens", [llm.get_tokenizer().encode(prompt) for prompt in prompts])
         outputs = llm.generate(prompts, sampling_params)
         # Print the outputs.
         print(f"\nGenerated Outputs {x}:\n" + "-" * 60)
@@ -45,5 +52,5 @@ def main():
             print("-" * 60)
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and not os.getenv("SKIP_MAIN"):
     main()
