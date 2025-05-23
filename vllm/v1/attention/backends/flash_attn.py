@@ -30,8 +30,10 @@ if current_platform.is_cuda():
 
 from torch import distributed as dist
 try:
-    import thunderkittens
-    import vllm_tk_interface as tk_interface
+    # import thunderkittens
+    # import vllm_tk_interface as tk_interface
+    from thunder_kittens import vllm_tk_interface as tk_interface
+
 except Exception as e:
     print(repr(e))
     raise SystemExit
@@ -653,8 +655,11 @@ class FlashAttentionImpl(AttentionImpl):
                 output[:num_actual_tokens] = fa_output[:num_actual_tokens]
                 return fa_output
 
+            # new in pulsar version
+            cache_seqlens, scheduler_metadata = attn_metadata.tk_sched
+
             # flash_attn_varlen_func(
-            output[:num_actual_tokens] = tk_interface.gqa_decode_cuda(
+            output[:num_actual_tokens] = tk_interface.tk_gqa_decode(
                 q=query[:num_actual_tokens],
                 k=None,
                 v=None,
@@ -672,11 +677,14 @@ class FlashAttentionImpl(AttentionImpl):
                 window_size=self.sliding_window,
                 block_table=block_table,
                 softcap=self.logits_soft_cap,
-                scheduler_metadata=attn_metadata.tk_sched, #scheduler_metadata,
+                scheduler_metadata=scheduler_metadata,
                 fa_version=self.vllm_flash_attn_version,
                 q_descale=layer._q_scale.expand(descale_shape),
                 k_descale=layer._k_scale.expand(descale_shape),
                 v_descale=layer._v_scale.expand(descale_shape),
+
+                # new in pulsar version
+                cache_seqlens=cache_seqlens,
             )
             if ASSERT and self.rank == 0:
                 # output is [batch_size..?, num_q_heads, head_dim]
