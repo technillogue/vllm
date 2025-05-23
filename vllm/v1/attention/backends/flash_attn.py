@@ -598,7 +598,7 @@ class FlashAttentionImpl(AttentionImpl):
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
             if self.rank == 0:
                 print("block_table:", block_table)
-            TESTING = True
+            TESTING = False
             if TESTING:
                 query = torch.ones_like(query)
                 # key_cache = torch.ones_like(key_cache)
@@ -679,9 +679,10 @@ class FlashAttentionImpl(AttentionImpl):
                 v_descale=layer._v_scale.expand(descale_shape),
             )
             if ASSERT and self.rank == 0:
+                # output is [batch_size..?, num_q_heads, head_dim]
                 print(
                     "tk shape:", output[:num_actual_tokens].shape, "\navg abs diff", abs(output - fa_output).mean(),
-                    "\ntk output", output[:num_actual_tokens], "\nfa output", fa_output[:num_actual_tokens]
+                    "\ntk output [:, :, head_dim=0] = ", output[:num_actual_tokens, :, 0], "\nfa output = ", fa_output[:num_actual_tokens, :, 0]
                     #, "\ndiff", output - fa_output
                 )
                 if TESTING:

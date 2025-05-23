@@ -35,6 +35,17 @@ def main():
     # llm = LLM(model="facebook/opt-125m", enforce_eager=True)
     llm = LLM(model="meta-llama/Llama-3.2-1B", enforce_eager=True, tensor_parallel_size=8, block_size=256)
     #llm = LLM(model="llama-1b-shard-0", enforce_eager=True, tensor_parallel_size=1, block_size=256, tokenizer="meta-llama/Llama-3.2-1B")
+    #
+
+    prompt_ids = [[0] * 7] * 5
+    print("generating:", prompt_ids)
+    outputs = llm.generate(None, sampling_params, prompt_token_ids=prompt_ids)
+    # Print the outputs.
+    print(f"Token Test Outputs:\n" + "-" * 60)
+    print(f"Prompt:    {outputs[0].prompt!r}")
+    print(f"Output:    {outputs[0].outputs[0].text!r}")
+    print("-" * 60)
+    #
     # Generate texts from the prompts.
     # The output is a list of RequestOutput objects
     # that contain the prompt, generated text, and other information.
