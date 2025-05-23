@@ -597,14 +597,14 @@ class FlashAttentionImpl(AttentionImpl):
 
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
             if self.rank == 0:
-                print("block_table:", block_table)
+                print("max_seqlen_q:", max_seqlen_q, " block_table:", block_table)
             TESTING = False
+            page_idx = 1
             if TESTING:
                 query = torch.ones_like(query)
                 # key_cache = torch.ones_like(key_cache)
                 key_cache.fill_(0.0)
                 value_cache.fill_(0.0)
-                page_idx = 1
                 # [num_pages, page_size, kv_heads=1, head_dim]
                 for token_idx in range(4):
                     # set the key cache to small values
@@ -615,11 +615,11 @@ class FlashAttentionImpl(AttentionImpl):
                 key_cache[:, 4, 0, :] = 50.0
                 # query, key_cache, value_cache = (torch.randn_like(n) for n in (query, key_cache, value_cache))
 
-                self.rank == 0 and  max_seqlen_q <= 1 and  print(
-                    "query[:, 0, 0]= ", query[:num_actual_tokens, 0, 0], 
-                    "\nv_cache[1, :6, :, 0]= ", value_cache[page_idx, :6, :, 0],
-                    "\nk_cache[1, :6, :, 0]= ", key_cache[page_idx, :6, :, 0]
-                )
+            self.rank == 0 and  max_seqlen_q <= 1 and  print(
+                "query[:, 0, 0]= ", query[:num_actual_tokens, 0, 0], 
+                "\nv_cache[1, :6, :, 0]= ", value_cache[page_idx, :6, :, 0],
+                "\nk_cache[1, :6, :, 0]= ", key_cache[page_idx, :6, :, 0]
+            )
 
 
             fa_output = torch.zeros_like(output)
@@ -682,7 +682,9 @@ class FlashAttentionImpl(AttentionImpl):
                 # output is [batch_size..?, num_q_heads, head_dim]
                 print(
                     "tk shape:", output[:num_actual_tokens].shape, "\navg abs diff", abs(output - fa_output).mean(),
-                    "\ntk output [:, :, head_dim=0] = ", output[:num_actual_tokens, :, 0], "\nfa output = ", fa_output[:num_actual_tokens, :, 0]
+                    "\ntk output [:, :, head_dim=0] = ", output[:num_actual_tokens, :, 0], "\nfa output = ", fa_output[:num_actual_tokens, :, 0],
+                    "\ntk output [:, :, head_dim=32] = ", output[:num_actual_tokens, :, 32], "\nfa output = ", fa_output[:num_actual_tokens, :, 32],
+                    "\ntk output [:, :, head_dim=63] = ", output[:num_actual_tokens, :, 63], "\nfa output = ", fa_output[:num_actual_tokens, :, 63],
                     #, "\ndiff", output - fa_output
                 )
                 if TESTING:
