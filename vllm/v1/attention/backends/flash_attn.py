@@ -309,6 +309,8 @@ class FlashAttentionMetadataBuilder:
                       scheduler_output: "SchedulerOutput") -> bool:
         return False
 
+    seqlen_prints = 0
+
     def build(self, num_reqs: int, num_actual_tokens: int, max_query_len: int,
               common_prefix_len: int):
         max_seq_len = self.runner.seq_lens_np[:num_reqs].max()
@@ -316,8 +318,9 @@ class FlashAttentionMetadataBuilder:
         query_start_loc = query_start_loc_cpu.to(self.runner.device,
                                                  non_blocking=True)
         seq_lens_cpu = self.runner.seq_lens_cpu[:num_reqs]
-        if dist.get_rank() == 0:
+        if dist.get_rank() == 0 and self.seqlen_prints < 5: 
             print("seqlens during schedule", seq_lens_cpu)
+            self.seqlen_prints += 1
         seq_lens = seq_lens_cpu.to(self.runner.device, non_blocking=True)
         block_table = (
             self.runner.input_batch.block_table.get_device_tensor()[:num_reqs])
@@ -598,8 +601,8 @@ class FlashAttentionImpl(AttentionImpl):
                 scheduler_metadata = attn_metadata.scheduler_metadata
 
             descale_shape = (cu_seqlens_q.shape[0] - 1, key.shape[1])
-            if self.rank == 0:
-                print("max_seqlen_q:", max_seqlen_q, " block_table:", block_table)
+            # if self.rank == 0:
+            #     print("max_seqlen_q:", max_seqlen_q, " block_table:", block_table)
             TESTING = False
             page_idx = 1
             if TESTING:
@@ -617,7 +620,7 @@ class FlashAttentionImpl(AttentionImpl):
                 key_cache[:, 4, 0, :] = 50.0
                 # query, key_cache, value_cache = (torch.randn_like(n) for n in (query, key_cache, value_cache))
 
-            self.rank == 0 and  max_seqlen_q <= 1 and  print(
+            self.rank == 0 and  max_seqlen_q <= 1 and os.getenv("DEBUG") and  print(
                 "query[:, 0, 0]= ", query[:num_actual_tokens, 0, 0], 
                 "\nv_cache[1, :6, :, 0]= ", value_cache[page_idx, :6, :, 0],
                 "\nk_cache[1, :6, :, 0]= ", key_cache[page_idx, :6, :, 0]
@@ -656,7 +659,8 @@ class FlashAttentionImpl(AttentionImpl):
                 return fa_output
 
             # new in pulsar version
-            cache_seqlens, scheduler_metadata = attn_metadata.tk_sched
+            cache_seqlens = attn_metadata.seq_lens
+            tk_scheduler_metadata = attn_metadata.tk_sched
 
             # flash_attn_varlen_func(
             output[:num_actual_tokens] = tk_interface.tk_gqa_decode(
@@ -677,7 +681,7 @@ class FlashAttentionImpl(AttentionImpl):
                 window_size=self.sliding_window,
                 block_table=block_table,
                 softcap=self.logits_soft_cap,
-                scheduler_metadata=scheduler_metadata,
+                scheduler_metadata=tk_scheduler_metadata,
                 fa_version=self.vllm_flash_attn_version,
                 q_descale=layer._q_scale.expand(descale_shape),
                 k_descale=layer._k_scale.expand(descale_shape),
@@ -690,15 +694,15 @@ class FlashAttentionImpl(AttentionImpl):
                 # output is [batch_size..?, num_q_heads, head_dim]
                 print(
                     "tk shape:", output[:num_actual_tokens].shape, "\navg abs diff", abs(output - fa_output).mean(),
-                    "\ntk output [:, :, head_dim=0] = ", output[:num_actual_tokens, :, 0], "\nfa output = ", fa_output[:num_actual_tokens, :, 0],
-                    "\ntk output [:, :, head_dim=32] = ", output[:num_actual_tokens, :, 32], "\nfa output = ", fa_output[:num_actual_tokens, :, 32],
-                    "\ntk output [:, :, head_dim=63] = ", output[:num_actual_tokens, :, 63], "\nfa output = ", fa_output[:num_actual_tokens, :, 63],
+                    "\ntk output [:, :, ::16] = ", output[:num_actual_tokens, :, ::16], "\nfa output [:, :, ::16] = ", fa_output[:num_actual_tokens, :, ::16],
+                    # "\ntk output [:, :, head_dim=32] = ", output[:num_actual_tokens, :, 32], "\nfa output = ", fa_output[:num_actual_tokens, :, 32],
+                    # "\ntk output [:, :, head_dim=63] = ", output[:num_actual_tokens, :, 63], "\nfa output = ", fa_output[:num_actual_tokens, :, 63],
                     #, "\ndiff", output - fa_output
                 )
                 if TESTING:
                     assert False
                 assert output[:num_actual_tokens].allclose(fa_output[:num_actual_tokens], atol=1e-2)
-            if not THUNDER:
+            if os.getenv("NO_THUNDER") != "1":
                 output[:num_actual_tokens] = fa_output[:num_actual_tokens]
             return output
 
