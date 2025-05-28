@@ -59,10 +59,10 @@ def main():
     #     x = 0
     for i in range(3):
         for x, prompts in enumerate(tasks):
-            print(f"NO_THUNDER={os.getenv('NO_THUNDER')} generating prompts", prompts, "tokens", [llm.get_tokenizer().encode(prompt) for prompt in prompts])
+            print(f"THUNDER_GQA={not os.getenv('NO_THUNDER')} generating prompts", prompts, "tokens", [llm.get_tokenizer().encode(prompt) for prompt in prompts])
             outputs = llm.generate(prompts, sampling_params)
             # Print the outputs.
-            print(f"\nNO_THUNDER={os.getenv('NO_THUNDER')} Generated Outputs {x}:\n" + "-" * 60)
+            print(f"THUNDER_GQA={not os.getenv('NO_THUNDER')} Generated Outputs {x}:\n" + "-" * 60)
             for output in outputs:
                 prompt = output.prompt
                 generated_text = output.outputs[0].text

@@ -627,36 +627,34 @@ class FlashAttentionImpl(AttentionImpl):
             )
 
 
-            fa_output = torch.zeros_like(output)
-            flash_attn_varlen_func(
-                q=query[:num_actual_tokens],
-                k=key_cache,
-                v=value_cache,
-                out=fa_output[:num_actual_tokens], #output[:num_actual_tokens],
-                cu_seqlens_q=cu_seqlens_q,
-                max_seqlen_q=max_seqlen_q,
-                seqused_k=seqused_k,
-                max_seqlen_k=max_seqlen_k,
-                softmax_scale=self.scale,
-                causal=True,
-                alibi_slopes=self.alibi_slopes,
-                window_size=self.sliding_window,
-                block_table=block_table,
-                softcap=self.logits_soft_cap,
-                scheduler_metadata=scheduler_metadata,
-                fa_version=self.vllm_flash_attn_version,
-                q_descale=layer._q_scale.expand(descale_shape),
-                k_descale=layer._k_scale.expand(descale_shape),
-                v_descale=layer._v_scale.expand(descale_shape),
-            )
-            if max_seqlen_q > 1:
+            # prefill
+            if max_seqlen_q > 1 or os.getenv("NO_THUNDER"):
                 global prefill_warned
                 if not prefill_warned and self.rank == 0:
                     print("max_seqlen != 1, using fa not tk for prefill")
                     prefill_warned = True
-                # prefill
-                output[:num_actual_tokens] = fa_output[:num_actual_tokens]
-                return fa_output
+                flash_attn_varlen_func(
+                    q=query[:num_actual_tokens],
+                    k=key_cache,
+                    v=value_cache,
+                    out=output[:num_actual_tokens],
+                    cu_seqlens_q=cu_seqlens_q,
+                    max_seqlen_q=max_seqlen_q,
+                    seqused_k=seqused_k,
+                    max_seqlen_k=max_seqlen_k,
+                    softmax_scale=self.scale,
+                    causal=True,
+                    alibi_slopes=self.alibi_slopes,
+                    window_size=self.sliding_window,
+                    block_table=block_table,
+                    softcap=self.logits_soft_cap,
+                    scheduler_metadata=scheduler_metadata,
+                    fa_version=self.vllm_flash_attn_version,
+                    q_descale=layer._q_scale.expand(descale_shape),
+                    k_descale=layer._k_scale.expand(descale_shape),
+                    v_descale=layer._v_scale.expand(descale_shape),
+                )
+                return output
 
             # new in pulsar version
             cache_seqlens = attn_metadata.seq_lens
@@ -690,20 +688,20 @@ class FlashAttentionImpl(AttentionImpl):
                 # new in pulsar version
                 cache_seqlens=cache_seqlens,
             )
-            if ASSERT and self.rank == 0:
-                # output is [batch_size..?, num_q_heads, head_dim]
-                print(
-                    "tk shape:", output[:num_actual_tokens].shape, "\navg abs diff", abs(output - fa_output).mean(),
-                    "\ntk output [:, :, ::16] = ", output[:num_actual_tokens, :, ::16], "\nfa output [:, :, ::16] = ", fa_output[:num_actual_tokens, :, ::16],
-                    # "\ntk output [:, :, head_dim=32] = ", output[:num_actual_tokens, :, 32], "\nfa output = ", fa_output[:num_actual_tokens, :, 32],
-                    # "\ntk output [:, :, head_dim=63] = ", output[:num_actual_tokens, :, 63], "\nfa output = ", fa_output[:num_actual_tokens, :, 63],
-                    #, "\ndiff", output - fa_output
-                )
-                if TESTING:
-                    assert False
-                assert output[:num_actual_tokens].allclose(fa_output[:num_actual_tokens], atol=1e-2)
-            if os.getenv("NO_THUNDER") != "1":
-                output[:num_actual_tokens] = fa_output[:num_actual_tokens]
+            # if ASSERT and self.rank == 0:
+            #     # output is [batch_size..?, num_q_heads, head_dim]
+            #     print(
+            #         "tk shape:", output[:num_actual_tokens].shape, "\navg abs diff", abs(output - fa_output).mean(),
+            #         "\ntk output [:, :, ::16] = ", output[:num_actual_tokens, :, ::16], "\nfa output [:, :, ::16] = ", fa_output[:num_actual_tokens, :, ::16],
+            #         # "\ntk output [:, :, head_dim=32] = ", output[:num_actual_tokens, :, 32], "\nfa output = ", fa_output[:num_actual_tokens, :, 32],
+            #         # "\ntk output [:, :, head_dim=63] = ", output[:num_actual_tokens, :, 63], "\nfa output = ", fa_output[:num_actual_tokens, :, 63],
+            #         #, "\ndiff", output - fa_output
+            #     )
+            #     if TESTING:
+            #         assert False
+            #     assert output[:num_actual_tokens].allclose(fa_output[:num_actual_tokens], atol=1e-2)
+            # if os.getenv("NO_THUNDER") != "1":
+            #     output[:num_actual_tokens] = fa_output[:num_actual_tokens]
             return output
 
         assert not use_local_attn, (
