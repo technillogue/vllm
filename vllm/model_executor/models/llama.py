@@ -1,3 +1,4 @@
+import nvtx
 # SPDX-License-Identifier: Apache-2.0
 
 # Adapted from
@@ -197,6 +198,7 @@ class LlamaAttention(nn.Module):
             prefix=f"{prefix}.attn",
         )
 
+    @nvtx.annotate("layer")
     def forward(
         self,
         positions: torch.Tensor,

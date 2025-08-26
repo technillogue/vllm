@@ -3,7 +3,7 @@
 import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Optional
-
+import nvtx
 import numpy as np
 import torch
 
@@ -504,6 +504,7 @@ class FlashAttentionImpl(AttentionImpl):
             raise NotImplementedError(
                 "FlashAttention does not support fp8 kv-cache on this device.")
 
+    @nvtx.annotate("attn")
     def forward(
         self,
         layer: torch.nn.Module,
@@ -556,7 +557,8 @@ class FlashAttentionImpl(AttentionImpl):
         # print("key_cache shape before reshape", key_cache.shape)
         # print("slot mapping", attn_metadata.slot_mapping.shape)
 
-        torch.ops._C_cache_ops.reshape_and_cache_flash(
+        with nvtx.annotate("cache"):
+            torch.ops._C_cache_ops.reshape_and_cache_flash(
             key,
             value,
             key_cache,
@@ -565,7 +567,7 @@ class FlashAttentionImpl(AttentionImpl):
             self.kv_cache_dtype,
             layer._k_scale,
             layer._v_scale,
-        )
+            )
         # print("key_cache shape after reshape", key_cache.shape)
 
         if self.kv_cache_dtype.startswith("fp8"):

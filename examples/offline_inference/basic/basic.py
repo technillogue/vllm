@@ -23,8 +23,21 @@ prompts_3 = [
 #tasks = [prompts_2 + prompts_3]
 tasks = [["Hello, my"]]
 tasks = [prompts_3]
+
+# 128 tokens each
+fixed_len_prompts = [
+"""Design a theme park for aliens, incorporating their unique biology and cultural preferences. Consider the following:
+
+* The park should be built on a planet with a toxic atmosphere, so the infrastructure and attractions must be designed to accommodate this environment.
+* The alien visitors will have multiple limbs, sensitive hearing, and a weakness to bright lights. These characteristics should be taken into account when designing the park's architecture and attractions.
+* The aliens have a fascination with peculiar human customs and practices, so the park should include exhibits and interactive experiences that showcase these aspects of human culture.
+
+What would be the main attractions and areas of the park, and how would they cater""",
+"""Imagine a world where memories can be transferred from one person to another, and a black market has emerged for the most desirable and rare experiences, such as witnessing a total solar eclipse, falling in love for the first time, or achieving a world record in a particular sport. The main character, a talented but struggling artist, discovers that they have the ability to absorb and relive the memories of others, but at a terrible cost: each time they do, they lose a fragment of their own identity, and their sense of self begins to unravel. As they delve deeper into the world of memory trading, they must navigate a complex web of underground""",
+"""In the heart of a mystical forest, where ancient trees whispered secrets to the wind and fireflies danced like tiny stars, there existed a labyrinthine library known only as the Repository of Forgotten Knowledge, its shelves upon shelves of dusty tomes and crackling scrolls said to contain the collective memories of humanity's most brilliant and eccentric minds, waiting to be unearthed by a brave and curious soul willing to navigate the treacherous paths of forgotten lore, outwit the enigmatic librarians who guarded the stacks, and unravel the cryptic cataloging system that had been designed to confound even the most determined of seekers, all in pursuit of a"""]
+tasks = [fixed_len_prompts]
 # Create a sampling params object.
-sampling_params = SamplingParams(temperature=0, top_p=0.95, max_tokens=32)
+sampling_params = SamplingParams(temperature=0, top_p=0.95, min_tokens=512, max_tokens=512)
 
 def m():
     llm = LLM(model="meta-llama/Llama-3.2-1B", enforce_eager=True, tensor_parallel_size=8, block_size=256)
@@ -57,9 +70,10 @@ def main():
     #     os.environ["NO_THUNDER"] = "" if thunder_enabled else "1"
     #     prompts = tasks[0]
     #     x = 0
-    for i in range(3):
+    for i in range(1):
         for x, prompts in enumerate(tasks):
-            print(f"THUNDER_GQA={not os.getenv('NO_THUNDER')} generating prompts", prompts, "tokens", [llm.get_tokenizer().encode(prompt) for prompt in prompts])
+            tokens = [llm.get_tokenizer().encode(prompt) for prompt in prompts]
+            print(f"THUNDER_GQA={not os.getenv('NO_THUNDER')} generating prompts", prompts) #, "tokens", tokens)
             outputs = llm.generate(prompts, sampling_params)
             # Print the outputs.
             print(f"THUNDER_GQA={not os.getenv('NO_THUNDER')} Generated Outputs {x}:\n" + "-" * 60)
